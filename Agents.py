@@ -1,6 +1,5 @@
-import pygame
-import random
 from options import *
+import random
 
 class ManualAgent:
     def __init__(self, actions = ['LEFT', 'RIGHT', 'UP', 'DOWN']):
@@ -16,13 +15,13 @@ class ManualAgent:
         while True:
             consoleInput = raw_input("Enter your move: ")
             if consoleInput == 'a':
-                return ['LEFT']
+                return 'LEFT'
             elif consoleInput == 'd':
-                return ['RIGHT']
+                return 'RIGHT'
             elif consoleInput == 'w':
-                return ['UP']
+                return 'UP'
             elif consoleInput == 's':
-                return ['DOWN']
+                return 'DOWN'
             else:
                 print "Invalid entry. Enter again"
 
@@ -46,8 +45,8 @@ class QLearnAgent:
         self.MaxQ = None
 
     def getQ(self, state, action):
-        # return self.q.get((state, action), 0.0)
-        return self.q.get((state, action), 1.0)
+        return self.q.get((state, action), 0.0)
+        # return self.q.get((state, action), 1.0)
 
     def learnQ(self, state, action, reward, value):
         oldv = self.q.get((state, action), None)
@@ -58,12 +57,14 @@ class QLearnAgent:
 
     def getAction(self, state, return_q = False):
         q = [self.getQ(state, a) for a in self.actions]
-        # print state
-        # print q , " -- ", state
+        # print state, " -- ", q
         maxQ = max(q)
 
         if random.random() < self.epsilon:
+            # 1st way of selecting actions
             #action = random.choice(self.actions)
+
+            # 2nd way of selecting actions
             minQ = min(q); mag = max(abs(minQ), abs(maxQ))
             q = [q[i] + random.random() * mag - .5 * mag for i in range(len(self.actions))] # add random values to all the actions, recalculate maxQ
             maxQ = max(q)
@@ -75,17 +76,17 @@ class QLearnAgent:
         else:
             i = q.index(maxQ)
 
-        action = [self.actions[i]]
-        # print action
+        action = self.actions[i]
+        # print maxQ, " -- ", q
         self.MaxQ = maxQ
         if return_q: # if they want it, give it!
             return action, q
 
         return action
 
-    def learn(self, state1, action1, reward, state2):
+    def learn(self, state1, action1, reward, state2, timesteps=1):
         maxqnew = max([self.getQ(state2, a) for a in self.actions])
-        self.learnQ(state1, action1, reward, reward + self.gamma*maxqnew)
+        self.learnQ(state1, action1, reward, reward + (self.gamma**timesteps)*maxqnew)
 
     def returnLastMaxQ(self):
         StatesMaxQ = {}
@@ -111,7 +112,7 @@ class QLearnAgentWithOptions:
     If yes: select the option.
     If not: reduce the option's Q value, and select a new action to make
     """
-    def __init__(self, actions, epsilon=0.1, alpha=0.2, gamma=0.9):
+    def __init__(self, actions, finalGoal=None, epsilon=0.1, alpha=0.2, gamma=0.9):
         self.q = {}
 
         self.epsilon = epsilon
@@ -119,67 +120,92 @@ class QLearnAgentWithOptions:
         self.gamma = gamma
         self.actions = actions
         self.MaxQ = None
+        self.finalGoal = finalGoal
 
     def getQ(self, state, action):
+        # print state, " -- ", action, " -- ", self.finalGoal
         return self.q.get((state, action), 0.0)
         # return self.q.get((state, action), 1.0)
 
+    # This is the old learnQ
+    # def learnQ(self, state, action, reward, value):
+    #     oldv = self.q.get((state, action), None)
+    #     if oldv is None:
+    #         # self.q[(state, action)] = round(reward, 3)
+    #         self.q[(state, action)] = round(reward + self.alpha * (value - reward), 3)
+    #     else:
+    #         # self.q[(state, action)] = oldv + self.alpha * (value - oldv)
+    #         self.q[(state, action)] = round(oldv + self.alpha * (value - oldv), 3)
+    #     # self.q[(state, action)] = round(reward + self.alpha * (value - reward), 3)
+    #     # print "self.q[(", state, ", ", action, ")] = ", self.q[(state, action)]
+
+
+    # This new learnQ is working to match with Sutton's paper
     def learnQ(self, state, action, reward, value):
         oldv = self.q.get((state, action), None)
-        if oldv is None:
-            self.q[(state, action)] = round(reward, 3)
+        if self.checkFinalGoal(state):
+            self.q[(state, action)] = 100
         else:
-            # self.q[(state, action)] = oldv + self.alpha * (value - oldv)
-            self.q[(state, action)] = round(oldv + self.alpha * (value - oldv), 3)
+            if oldv is None:
+                self.q[(state, action)] = round(reward + self.alpha * (value - reward), 3)
+            else:
+                self.q[(state, action)] = round(oldv + self.alpha * (value - oldv), 3)
+        # print "self.q[(", state, ", ", action, ")] = ", self.q[(state, action)]
 
     def getAction(self, state, return_q=False):
-        q = [self.getQ(state, a) for a in self.actions]
+        # Check if the current state is the goal state or not. If yes, return None Actions
+        if self.checkFinalGoal(state) or (state == (None, None)):
+            return None
+
+        actions_list = self.actions[:]
+        q = [self.getQ(state, a) for a in actions_list]
         maxQ = max(q)
-        # print self.actions
-        # print q, " -- ", state
-        # print self.actions
-        # print q
 
         if random.random() < self.epsilon:
             #action = random.choice(self.actions)
             minQ = min(q); mag = max(abs(minQ), abs(maxQ))
-            q = [round(q[i] + random.random() * mag - .5 * mag, 3) for i in range(len(self.actions))] # add random values to all the actions, recalculate maxQ
+            q = [round(q[i] + random.random() * mag - .5 * mag, 3) for i in range(len(actions_list))] # add random values to all the actions, recalculate maxQ
             maxQ = max(q)
 
-        action = []
+        action = None
+
+        # This while loop is introduced in case of options, in order to make sure that we select a legal option.
         while True:
-            # print "here --- ",q
             maxQ = max(q)
             count = q.count(maxQ)
 
             if count > 1:
-                best = [i for i in range(len(self.actions)) if q[i] == maxQ]
+                best = [i for i in range(len(actions_list)) if q[i] == maxQ]
                 i = random.choice(best)
             else:
                 i = q.index(maxQ)
 
             # Check if the action is an option.
-            if isinstance(self.actions[i], Options):
+            if isinstance(actions_list[i], Options):
                 """
                 This is a complete heuristic from my side. I have no clue if there is a formal treatment for this
                 problem.
                 This is inspired from the random selection process used in this Qlearn algorithm (just few lines above).
                 """
                 # First, check if this state is a legal state for the action
-                if self.actions[i].checkLegality(state):
-                    action = [self.actions[i]]
+                if actions_list[i].checkLegality(state):
+                    action = actions_list[i]
                     break
                 else:
-                    # If not, reduce its Q-Value
-                    minQ = min(q); mag = max(abs(minQ), abs(maxQ))
-                    q[i] -= random.random() * mag
+                    # 1. Reduce its Q-Value --> I tried this hypothesis before, and it can lead to an infinite loop
+                    # minQ = min(q); mag = max(abs(minQ), abs(maxQ))
+                    # q[i] -= random.random() * mag
+
+                    # 2. Remove the troubling action and its Q-value
+                    del actions_list[i]
+                    del q[i]
                     continue
             else:
-                action = [self.actions[i]]
+                action = actions_list[i]
                 break # Since this is a primitive action in this case
 
-        assert (len(action) != 0) #Because in this case, no action is selected
         self.MaxQ = maxQ
+
         if return_q: #if they want it, give it!
             return action, q
 
@@ -188,12 +214,71 @@ class QLearnAgentWithOptions:
     def returnLastMaxQ(self):
         return self.MaxQ
 
-    def learn(self, state1, action1, reward, state2):
-        # print "I am fucking learning!, \n", state1, action1, state2, reward
-        maxqnew = max([self.getQ(state2, a) for a in self.actions])
-        # print "maxqnew = ", maxqnew
-        self.learnQ(state1, action1, reward, reward + self.gamma*maxqnew)
+    def checkFinalGoal(self, state):
+        if tuple(state) == tuple(self.finalGoal):
+            maxqnew = 100
+            return True
+        return False
 
-    def addOptions(self, optionsList):
-        for option in optionsList:
-            self.actions.append(option)
+    def learn(self, state1, action1, reward, state2, timesteps=1, finalGoal = None):
+        maxqnew = max([self.getQ(state2, a) for a in self.actions+[None]])
+        # print "I am doing Q-Value Learning !! :\t", state1, action1, state2, reward, maxqnew, timesteps
+
+        if self.detectOptionType(action1):  # In case of an option, I must update all its initiation state
+            self.learnQ(state1, action1, reward, reward + (self.gamma**timesteps)*maxqnew)
+        else: #This will update with primitive action or None action (in case of the goal state)
+            self.learnQ(state1, action1, reward, reward + (self.gamma)*maxqnew)
+        # Qvalue = [self.getQ(state1, a) for a in self.actions]
+        # print Qvalue
+
+    def detectOptionType(self, action):
+        """
+        This method will detect whether this action is a primitive action or an option
+        :param action:
+        :return:
+        """
+        return isinstance(action, Options)
+
+    def getStateDistanceOptions(self, action1, state):
+        """
+        This will calculate the L1 distance
+        Note here that I assume we have an optimal policy for each option. Later, I must play the option multiple times,
+        like what I did in the testing, and what is the likelihood of this states ending in the goal of the option.
+        :param action1:
+        :param state:
+        :return:
+        """
+        goal = action1.getOptionGoal()
+        return abs(goal[0] - state[0]) + abs(goal[1] - state[1])
+
+    def getStateDistanceStates(self, state1, state2):
+        """
+        This will calculate the L1 distance
+        Note here that I assume we have an optimal policy for each option. Later, I must play the option multiple times,
+        like what I did in the testing, and what is the likelihood of this states ending in the goal of the option.
+        :param action1:
+        :param state:
+        :return:
+        """
+        return abs(state1[0] - state2[0]) + abs(state1[1] - state2[1])
+
+
+    def returnLastMaxQ(self):
+        StatesQ = {}
+        StatesMaxQ = {}
+        for item_pair in self.q:
+            state, _ = item_pair
+            # if state not in StatesMaxQ.keys():
+            #     q = [self.getQ(state, a) for a in self.actions]
+            #     StatesMaxQ[state] = max(q)
+            try:
+                StatesQ[state].append(self.q[item_pair])
+            except:
+                StatesQ[state] = [self.q[item_pair]]
+        for state in StatesQ:
+            StatesMaxQ[state] = max(StatesQ[state])
+        return StatesMaxQ
+
+    def getStateValue(self, state):
+
+        return max([self.getQ(state, a) for a in self.actions+[None]])

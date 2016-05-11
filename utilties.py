@@ -1,8 +1,6 @@
+from options import *
 import copy
 import random
-import pygame
-from options import *
-
 class GameState:
     def __init__(self):
         self.robotPosition = [None, None]
@@ -13,6 +11,9 @@ class GameState:
         self.boardDim = [None, None]
         self.steps = 0
         self.lastAction = None
+        self.macroSteps = 0
+        self.InitialPosition = [None, None]
+        self.optionTime = 0 # This will communicate to the agent the trace of the options
 
     def Copy(self, gameState):
         self.robotPosition = copy.deepcopy(gameState.robotPosition)
@@ -23,6 +24,9 @@ class GameState:
         self.boardDim = copy.deepcopy(gameState.boardDim)
         self.steps = copy.deepcopy(gameState.steps)
         self.lastAction = copy.deepcopy(gameState.lastAction)
+        self.macroSteps = copy.deepcopy(gameState.macroSteps)
+        self.InitialPosition = copy.deepcopy(gameState.InitialPosition)
+        self.optionTime = copy.deepcopy(gameState.optionTime)
 
     def __str__(self):
         final = "robotPosition = " + str(self.robotPosition) + \
@@ -32,8 +36,17 @@ class GameState:
                 "\nboardDim = " + str(self.boardDim) + \
                 "\nsteps = " + str(self.steps) + \
                 "\nlastAction = " + str(self.lastAction) + \
+                "\nmacroSteps = " + str(self.macroSteps) + \
+                "\nInitialPosition = " + str(self.InitialPosition) + \
+                "\noptionTime = " + str(self.optionTime) + \
                 "\n"
         return final
+
+    def gameStepProgress(self):
+        self.steps += 1
+
+    def gameMacroStepProgress(self):
+        self.macroSteps += 1
 
 class GameLogic:
     """
@@ -52,98 +65,96 @@ class GameLogic:
         :return:
         """
         assert (isinstance(gameState, GameState))
-        actions_list = AgentClass.getAction(tuple(gameState.robotPosition))
+        currentAction = AgentClass.getAction(tuple(gameState.robotPosition))
         current_pos = gameState.robotPosition
         temp_pos = current_pos[:]
-        current_action = None
-        OptionsLen = 0
         tempReward = 0
-        for current_action in actions_list:
 
-            if type(current_action) is str:
-                new_pos = temp_pos[:]
-                if current_action == 'LEFT':
-                    new_pos[1] -= 1
-                elif current_action == 'RIGHT':
-                    new_pos[1] += 1
-                elif current_action == 'UP':
-                    new_pos[0] -= 1
-                elif current_action == 'DOWN':
-                    new_pos[0] += 1
+        optionTimeLength = 0
+        if type(currentAction) is str: # A primitive action
+            new_pos = temp_pos[:]
+            if currentAction == 'LEFT':
+                new_pos[1] -= 1
+            elif currentAction == 'RIGHT':
+                new_pos[1] += 1
+            elif currentAction == 'UP':
+                new_pos[0] -= 1
+            elif currentAction == 'DOWN':
+                new_pos[0] += 1
 
-                if self.isLegal(new_pos, gameState):
-                    if not self.detectWall(new_pos, gameState):
-                        temp_pos = new_pos
-                        if self.detectGoal(new_pos, gameState):
-                            self.win = True
-                            gameState.reward = 3.0
-                            break # No need to continue the rest of the actions!
-                    else:
-                        tempReward -= 0.5 #Negative reward for hitting the wall!
-                        temp_pos = current_pos
+            if self.isLegal(new_pos, gameState):
+                if not self.detectWall(new_pos, gameState):
+                    temp_pos = new_pos
+                    if self.detectGoal(new_pos, gameState):
+                        self.win = True
+                        gameState.reward = 3.0
+                        tempReward += 100
                 else:
+                    tempReward -= 0.5 #Negative reward for hitting the wall!
                     temp_pos = current_pos
-            # elif isinstance(current_action, Options):
             else:
-                print "An option has been selected = ", current_action
-                newGameState = GameState()
-                newGameState.Copy(gameState)
-                # New direction: Here, the option will take control of the execution.
-                newGameState.gameGoal = current_action.getOptionGoal()
-                # new_pos = temp_pos[:]
-                debugCounter = 0
-                while not newGameState.win: #The option has to terminate. I can add a random probability here in the future as well.
-                    debugCounter += 1
-                    print "debugCounter = ", debugCounter
-                    # if debugCounter == 30:
-                    #     exit()
-                    actions_list_option = current_action.LearningAgentClass.getAction(tuple(newGameState.robotPosition))
-                    print "Actions from the option = ", actions_list_option
-                    for current_action_OPTION in actions_list_option:
-                        OptionsLen += 1 # TODO: This assumes the option uses primitive action. This update should change for future generalization
+                temp_pos = current_pos
+        # elif isinstance(currentAction, Options):
+        else:
+            # print "An option has been selected = ", currentAction
+            newGameState = GameState()
+            newGameState.Copy(gameState)
+            # New direction: Here, the option will take control of the execution.
+            newGameState.gameGoal = currentAction.getOptionGoal()
+            # new_pos = temp_pos[:]
+            while not newGameState.win: #The option has to terminate. I can add a random probability/interruption options here in the future as well.
+                optionTimeLength += 1
+                new_pos = temp_pos[:]
+                # print "optionTimeLength = ", optionTimeLength
+                if optionTimeLength == 100: # This number is a parameter, to be changed and modified for further testing
+                    tempReward -= 0 #Negative reward for hitting the wall!
+                    # temp_pos = new_pos[:] # No need for this line, since temp_pos will be already updated at this point
+                    break
 
-                        if type(current_action_OPTION) is str:
-                            print "YES, it is a string!"
-                            new_pos = temp_pos[:]
-                            print "From Option - robot position = ", new_pos
-                            # print "Legal action from options = ", current_action_OPTION, new_pos
-                            if current_action_OPTION == 'LEFT':
-                                new_pos[1] -= 1
-                            elif current_action_OPTION == 'RIGHT':
-                                new_pos[1] += 1
-                            elif current_action_OPTION == 'UP':
-                                new_pos[0] -= 1
-                            elif current_action_OPTION == 'DOWN':
-                                new_pos[0] += 1
-                            # print "Position after option = ", new_pos
-                            if self.isLegal(new_pos, newGameState):
-                                if not self.detectWall(new_pos, newGameState):
-                                    temp_pos = new_pos[:]
-                                    newGameState.robotPosition = new_pos [:]
-                                    if self.detectGoal(new_pos, gameState): #This will check for the final goal
-                                        # print "WE WOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOON"
-                                        # print new_pos
-                                        self.win = True
-                                        gameState.reward = 3.0
-                                        break # No need to continue the rest of the actions!
-                                    elif self.detectGoal(new_pos, newGameState): #This will check for subgoal - which is the end of the option
-                                        print "Goal is done I swear!!!"
-                                        newGameState.win = True
-                                        gameState.reward = 3.0
-                                        break
-                                else:
-                                    tempReward -= 0.5 #Negative reward for hitting the wall!
-                                    temp_pos = current_pos [:]
-                                    newGameState.robotPosition = current_pos [:]
+                actions_option = currentAction.LearningAgentClass.getAction(tuple(newGameState.robotPosition))
+                # print "Actions from the option = ", actions_option
+                if type(actions_option) is str:
+                    # print "From Option : ", currentAction, " - robot position = ", new_pos
+                    # print "Legal action from options = ", current_action_OPTION, new_pos
+                    if actions_option == 'LEFT':
+                        new_pos[1] -= 1
+                    elif actions_option == 'RIGHT':
+                        new_pos[1] += 1
+                    elif actions_option == 'UP':
+                        new_pos[0] -= 1
+                    elif actions_option == 'DOWN':
+                        new_pos[0] += 1
+                    # print "Position after option = ", new_pos
+                    if self.isLegal(new_pos, newGameState):
+                        if not self.detectWall(new_pos, newGameState):
+                            temp_pos = new_pos[:]
+                            newGameState.robotPosition = new_pos [:]
+                            if self.detectGoal(new_pos, gameState): #This will check for the final goal
+                                self.win = True
+                                # gameState.reward = 3.0
+                                tempReward += 100
+                                break # No need to continue the rest of the actions!
+                            elif self.detectGoal(new_pos, newGameState): #This will check for subgoal - which is the end of the option
+                                print "Goal is done I swear!!!"
+                                newGameState.win = True
+                                # gameState.reward = 3.0 # TODO: Do I really reward the completion of a subgoal like this during the main RL process?
+                                # tempReward += 100 # TODO: Do I really reward the completion of a subgoal like this during the main RL process?
+                                break
                             else:
-                                temp_pos = current_pos
-                                newGameState.robotPosition = current_pos [:]
-                # tempReward += 10
+                                tempReward -= 0 #Negative in general if it doesn't reach any goal!
+                        else:
+                            tempReward -= 0.5 #Negative reward for hitting the wall!
+                            temp_pos = current_pos [:]
+                            newGameState.robotPosition = current_pos [:]
+                    else:
+                        temp_pos = current_pos
+                        newGameState.robotPosition = current_pos [:]
+            # tempReward += 10
 
-        gameState.steps = len(actions_list) + OptionsLen
+        gameState.steps = 1 + optionTimeLength
         gameState.robotPosition = temp_pos
         gameState.win = self.win
-        gameState.lastAction = current_action # Since we know it is only action!
+        gameState.lastAction = currentAction # Since we know it is only action!
         gameState.reward = -1.0 + tempReward
         return gameState
 
@@ -165,6 +176,191 @@ class GameLogic:
         if (x < gameState.boardDim[0]) and (y < gameState.boardDim[1]):
             return True
         return False
+
+class GameLogic2(GameLogic):
+    def __init__(self, PrimitiveActions):
+        GameLogic.__init__(self)
+        self.PrimitiveActions = PrimitiveActions
+
+    def GetLegalOptions(self, gameState):
+        """
+        This method will return the list of legal actions/options that can be taken starting from the current state.
+        :param gameState:
+        :return:
+        """
+        pass
+
+    def update2(self, gameState, AgentClass, stoppingCondition=False, insideOption=False):
+        assert (isinstance(gameState, GameState))
+        currentAction = AgentClass.getAction(tuple(gameState.robotPosition))
+        current_robot_pos = gameState.robotPosition
+        immediateReward = 0
+
+        # if not insideOption:
+        #     print "Action selected = ", currentAction, " -- Current position = ", current_robot_pos
+        if self.detectGoal(current_robot_pos, gameState):
+            # print "Goal detected, ", current_robot_pos
+            self.win = True
+            temp_pos = current_robot_pos
+            gameState.win = self.win
+
+        elif self.IsPrimitiveAction(currentAction):
+            new_pos = self.updatePosPrimitiveAction(currentAction, current_robot_pos)
+
+            if self.isLegal(new_pos, gameState):  # not outside the game borders
+                if not self.detectWall(new_pos, gameState):  # doesn't get inside the wall
+                    temp_pos = new_pos
+                else:
+                    temp_pos = current_robot_pos
+            else:
+                temp_pos = current_robot_pos
+
+            gameState = self.UpdateGameState(currentGameState=gameState, newRobotPosition=temp_pos,
+                                             totalImmediateReward=immediateReward, winFlag=False,  # I made the winFlag a hard false, since it should not be updated here
+                                             lastAction=currentAction, macroSteps=not insideOption, steps_bias=1)
+
+        else: #In this case, we are dealing with an option
+            newGameState = GameState()
+            newGameState.Copy(gameState)
+            # finalGoal = gameState.gameGoal
+            newGameState.gameGoal = currentAction.getOptionGoal()
+            optionWatchDogTimer = 0
+            while (not newGameState.win) and (optionWatchDogTimer < 200) and (newGameState.lastAction != None):  # TODO: use a parametrized class to set this number.
+                newGameState = self.update2(newGameState, currentAction.LearningAgentClass, stoppingCondition=True, insideOption=True) #Hope this will work
+                # immediateReward += AgentClass.getStateValue(newGameState.robotPosition)**optionWatchDogTimer #The delayed reward
+                optionWatchDogTimer += 1
+
+            gameState = self.UpdateGameState(currentGameState=gameState, newRobotPosition=newGameState.robotPosition,
+                                             totalImmediateReward=immediateReward, winFlag=False, # I made the winFlag a hard false, since it should not be updated here
+                                             lastAction=currentAction, macroSteps=not insideOption, steps_bias=optionWatchDogTimer) #maybe I need to review the parameters of this class
+            # print "newGameState.win = ", newGameState.win, " - optionWatchDogTimer = ", optionWatchDogTimer, " - newGameState.lastAction = ", newGameState.lastAction
+            temp_pos = newGameState.robotPosition
+
+        # if not insideOption:
+        #     print "Update -- old Pos : ", current_robot_pos, " -- action : ", currentAction, " -- newPos : ", temp_pos
+        # else:
+        #     print "Update insideOption -- old Pos : ", current_robot_pos, " -- action : ", currentAction, " -- newPos : ", temp_pos
+        return gameState
+
+    def update(self, gameState, AgentClass, stoppingCondition=False, insideOption=False):
+        assert (isinstance(gameState, GameState))
+        currentAction = AgentClass.getAction(tuple(gameState.robotPosition))
+        current_robot_pos = gameState.robotPosition
+        # print "UPDATE -- ", gameState.robotPosition, " -- Action selected : ", currentAction
+        immediateReward = 0
+
+        #Check here if the robot is in the goal state --> No actions is returned
+        if currentAction == None:
+            # print "No more Actions! -- Option = ", insideOption, " -- action = ", currentAction
+            temp_pos = (None, None)
+            # temp_pos = current_robot_pos
+            self.win = True
+            immediateReward = 0
+            # immediateReward = 100
+
+            gameState = self.UpdateGameState(currentGameState=gameState, newRobotPosition=temp_pos,
+                                             totalImmediateReward=immediateReward, winFlag=self.win,
+                                             lastAction=currentAction, macroSteps=not insideOption)
+
+        elif self.IsPrimitiveAction(currentAction):
+            new_pos = self.updatePosPrimitiveAction(currentAction, current_robot_pos)
+
+            if self.isLegal(new_pos, gameState):  # not outside the game borders
+                if not self.detectWall(new_pos, gameState):  # doesn't get inside the wall
+                    temp_pos = new_pos
+                    if insideOption:
+                        # If my understanding is correct (from the paper and from the talks with Nicolas),
+                        # I should put the value of this state from the Q-table inside the options agent
+                        # immediateReward = 0
+                        immediateReward = AgentClass.getStateValue(temp_pos)
+                        print "Action = ", currentAction, " - Immediate reward ", immediateReward
+
+                    elif self.detectGoal(new_pos, gameState):
+                        # self.win = True
+                        # immediateReward = 100
+                        # This if condition is experimental. I am not sure if it is correct.
+                        if insideOption:
+                            immediateReward = 0
+                        else:
+                            immediateReward = 100
+                    else:
+                        immediateReward = 0
+                else:
+                    temp_pos = current_robot_pos
+            else:
+                temp_pos = current_robot_pos
+
+            gameState = self.UpdateGameState(currentGameState=gameState, newRobotPosition=temp_pos,
+                                             totalImmediateReward=immediateReward, winFlag=False,  # I made the winFlag a hard false, since it should not be updated here
+                                             lastAction=currentAction, macroSteps=not insideOption)
+
+        else: #In this case, we are dealing with an option
+            """
+            My idea here is that the function will recurse on itself.
+            If it works (recursion inside the class is usually a bad idea), then it should generalize beautifully.
+            Otherwise, I may have to take this function outside the class in order to enable the recursion
+            """
+            # print "UPDATE - OPTION - ", currentAction
+            newGameState = GameState()
+            newGameState.Copy(gameState)
+            finalGoal = gameState.gameGoal
+            newGameState.gameGoal = currentAction.getOptionGoal()
+            optionWatchDogTimer = 0
+            while (not newGameState.win) and (optionWatchDogTimer < 200) and (newGameState.lastAction != None): #TODO: use a parametrized class to set this number.
+                # print "newGameState.win = ", newGameState.win
+                newGameState = self.update(newGameState, currentAction.LearningAgentClass, stoppingCondition=True, insideOption=True) #Hope this will work
+                optionWatchDogTimer += 1
+                print "optionWatchDogTimer = ", optionWatchDogTimer
+
+            print "State after options completion = ", newGameState
+            # Make a check on the goal flag
+            # print "I reached here :D , optionWatchDogTimer = ", optionWatchDogTimer
+            # print "UPDATE -- Option is OVER -- ", currentAction, " -- with Reward : ", newGameState.reward, " -- optionWatchDogTimer = ", optionWatchDogTimer
+            # if self.detectGoal(newGameState.robotPosition, gameState): #This also has the same problem. It gives the reward before actually taking the step.
+            #     immediateReward = 100
+            # else:
+            #     self.win = False
+            #     immediateReward = 0
+
+            gameState = self.UpdateGameState(currentGameState=gameState, newRobotPosition=newGameState.robotPosition,
+                                             totalImmediateReward=immediateReward, winFlag=False, # I made the winFlag a hard false, since it should not be updated here
+                                             lastAction=currentAction, macroSteps=not insideOption) #maybe I need to review the parameters of this class
+
+        return gameState
+
+
+    def IsPrimitiveAction(self, action):
+        return type(action) is str
+
+    def UpdateGameState (newPos, currentGameState, newRobotPosition, totalImmediateReward, winFlag, lastAction,
+                         macroSteps, steps_bias=1):
+        newGameState = GameState()
+        newGameState.Copy(currentGameState)
+        newGameState.reward = totalImmediateReward
+        newGameState.win = winFlag
+        newGameState.robotPosition = newRobotPosition
+        newGameState.lastAction = lastAction
+        newGameState.steps += steps_bias
+        if macroSteps:
+            newGameState.macroSteps += 1
+        return newGameState
+
+    def updatePosPrimitiveAction(self, action, current_pos):
+        assert (type(action) is str)
+        assert (action in self.PrimitiveActions)
+
+        new_pos = list(current_pos[:])
+        if action == 'LEFT':
+            new_pos[1] -= 1
+        elif action == 'RIGHT':
+            new_pos[1] += 1
+        elif action == 'UP':
+            new_pos[0] -= 1
+        elif action == 'DOWN':
+            new_pos[0] += 1
+
+        return tuple(new_pos)
+
 
 class Domain:
     """
@@ -257,7 +453,7 @@ class Domain:
                                     and (self.gameMap[row_index][col_index] == str(area_number)):
                                 self.empty_poses.append([row_index, col_index])
         # return self.empty_poses
-        self.empty_poses.append(self.gameGoal)
+        # self.empty_poses.append(self.gameGoal)
         return self.empty_poses
 
     def initRobot(self):
@@ -267,7 +463,7 @@ class Domain:
         """
         assert (len(self.empty_poses) != 0) # make sure there are empty places.
         self.robot_position = list(random.choice(self.empty_poses))
-        assert (self.robot_position != self.gameGoal) #Just to make sure!
+        # assert (self.robot_position != self.gameGoal) #Just to make sure!
         return self.robot_position
 
     def initRobotFIXED(self):
@@ -276,7 +472,9 @@ class Domain:
         :return:
         """
         assert (len(self.empty_poses) != 0) # make sure there are empty places.
-        self.robot_position = self.empty_poses[0]
+        # self.robot_position = list(self.empty_poses[0])
+        self.robot_position = [2, 2]
+        # self.robot_position = [10, 14]
         return self.robot_position
 
     def setGoal(self, newGoal):

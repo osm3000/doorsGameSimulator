@@ -1,49 +1,58 @@
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
+import matplotlib as mpl
 import copy
-class QValueOnlinePlot:
-    """
+import warnings
+from sklearn import preprocessing
+import datetime
+import os
 
-    """
-    def __init__(self, figureName, gameState):
-        self.figure_name = figureName
 
-        self.fig = plt.figure(self.figure_name)
-        self.ax = self.fig.add_subplot(111)
+timeStamp = 'Results_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now())
+if not os.path.exists(timeStamp):
+    os.makedirs(timeStamp)
 
-        self.title = "Achieving Goal: " + str(gameState.gameGoal)
-        self.ax.set_title(self.title)
-        plot_handle = plt.ion()
-        plt.show()
+def QValueDraw(figureName, gameState, MaxQvalue, episode_num=0, experimentConfigName=""):
+    global timeStamp
+    plt.figure(figureName)
+    plt.title("Achieving Goal: " + str(gameState.gameGoal) + "_episode=" + str(episode_num))
+    heatMapArray = np.zeros((gameState.boardDim[0], gameState.boardDim[1]))
 
-        # print gameState.boardDim
-        self.heatMapArray = np.zeros((gameState.boardDim[0], gameState.boardDim[1]))
-
-        self.DrawBar = False # This should happen only once
-
-    def Draw(self, MaxQvalue):
-        """
-
-        :param gameState:
-        :return:
-        """
-        # current_state = gameState.robotPosition # This should be changed to the robot prev position.
-        # but should work fine now for testing only
+    try:
         for state in MaxQvalue:
-            self.heatMapArray[state[0], state[1]] = MaxQvalue[state]
-        # cax = self.ax.imshow(self.heatMapArray, cmap=cm.coolwarm)
-        cax = self.ax.imshow(self.heatMapArray, interpolation='nearest', cmap=cm.cool)
-        if not self.DrawBar:
-            # cbar = self.fig.colorbar(cax, ticks=[-501, -500, 500])
-            self.DrawBar = True
-
-        plt.draw()
-        # print self.heatMapArray
-        # print "HERE"
-        # print exit()
-
-    def EndDraw(self):
-        plt.close()
-        # print self.heatMapArray
+            heatMapArray[state[0], state[1]] = MaxQvalue[state]
+            # print state, " -- Value = ", MaxQvalue[state]
         # exit()
+    except TypeError:
+        warnings.warn("MaxQvalue returns a single float value, instead of a hashtable!!", UserWarning)
+
+
+    # I want to scale the matrix here to be between -1 and +1, in order to ease the drawing
+    # min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
+    # heatMapArray = min_max_scaler.fit_transform(heatMapArray)
+    ############################################
+    # This addition is to insert the robot last place in the map
+    # heatmap = plt.pcolor(heatMapArray)
+    x, y = gameState.robotPosition
+    # print "final position = ", x,y
+    plt.text(y, x, "R", horizontalalignment='center', verticalalignment='center')
+    x, y = gameState.InitialPosition
+    plt.text(y, x, "I", horizontalalignment='center', verticalalignment='center')
+
+    # print "Initial Position position = ", gameState.InitialPosition
+    ############################################
+    plt.imshow(heatMapArray, interpolation='nearest')#, norm=norm)
+    plt.colorbar(ticks=[0, 50, 100])
+    # plt.colorbar(heatmap)
+    plt.grid(True)
+    imagePath = "./"+timeStamp+"/"+experimentConfigName+"/images/"
+    if not os.path.exists(imagePath):
+        os.makedirs(imagePath)
+    plt.savefig(imagePath+figureName + '.png')
+    # plt.show()
+    plt.close()
+
+    # np.savetxt(imagePath+figureName+"_HeatMap.txt", heatMapArray.round(decimals=3)) # No need for this anymore
